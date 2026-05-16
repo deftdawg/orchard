@@ -1855,7 +1855,7 @@ class ContainerService: ObservableObject {
 
     // MARK: - Container Terminal
 
-    func openTerminal(for containerId: String, shell: String = "/bin/sh") {
+    func openTerminal(for containerId: String, shell: String = "sh") {
         // Build the command to execute in the preferred terminal
         let containerBinary = safeContainerBinaryPath()
 
@@ -1929,11 +1929,11 @@ class ContainerService: ObservableObject {
         }
 
         // Use 'open -na' to always open a new window, even if Ghostty is already running
-        // Pass the command via '/bin/sh -c' to avoid Ghostty's argument parsing issues
+        // Pass the command via 'sh -c' to avoid Ghostty's argument parsing issues
         let fullCommand = "'\(containerBinary)' exec -it '\(containerId)' \(shell)"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-        process.arguments = ["-na", appURL.path, "--args", "-e", "/bin/sh", "-c", fullCommand]
+        process.arguments = ["-na", appURL.path, "--args", "-e", "sh", "-c", fullCommand]
 
         do {
             try process.run()
@@ -1966,7 +1966,7 @@ class ContainerService: ObservableObject {
     }
 
     func openTerminalWithBash(for containerId: String) {
-        openTerminal(for: containerId, shell: "/bin/bash")
+        openTerminal(for: containerId, shell: "bash")
     }
 
     // MARK: - Image Management
@@ -2066,7 +2066,11 @@ class ContainerService: ObservableObject {
             environmentVariables: envVars,
             portMappings: portMappings,
             volumeMappings: volumeMappings,
-            dnsDomain: config.dns.domain ?? ""
+            workingDirectory: config.initProcess.workingDirectory,
+            commandOverride: config.initProcess.arguments.joined(separator: " "),
+            executable: config.initProcess.executable,
+            dnsDomain: config.dns.domain ?? "",
+            network: snapshot.networks.first?.network ?? ""
         )
 
         await runContainer(config: runConfig)
@@ -2088,11 +2092,13 @@ class ContainerService: ObservableObject {
         environment: [String],
         workingDirectory: String,
         commandOverride: [String],
+        executableOverride: String? = nil,
         mounts: [Filesystem],
         publishedPorts: [PublishPort],
         dns: ContainerResource.ContainerConfiguration.DNSConfiguration?,
         networkName: String,
-        autoRemove: Bool
+        autoRemove: Bool,
+        terminal: Bool
     ) async throws {
         // Fetch or pull the image
         let image = try await ClientImage.fetch(reference: imageRef)
@@ -2139,12 +2145,23 @@ class ContainerService: ObservableObject {
 
         let wd = workingDirectory.isEmpty ? (imageConfig?.workingDir ?? "/") : workingDirectory
 
+        let executable: String
+        let arguments: [String]
+
+        if let override = executableOverride, !override.isEmpty {
+            executable = override
+            arguments = processArgs
+        } else {
+            executable = processArgs.first!
+            arguments = Array(processArgs.dropFirst())
+        }
+
         let process = ProcessConfiguration(
-            executable: processArgs.first!,
-            arguments: Array(processArgs.dropFirst()),
+            executable: executable,
+            arguments: arguments,
             environment: mergedEnv,
             workingDirectory: wd,
-            terminal: false,
+            terminal: terminal,
             user: user
         )
 
@@ -2242,11 +2259,13 @@ class ContainerService: ObservableObject {
                 environment: envStrings,
                 workingDirectory: config.workingDirectory,
                 commandOverride: commandArgs,
+                executableOverride: config.executable,
                 mounts: mounts,
                 publishedPorts: ports,
                 dns: dns,
                 networkName: config.network,
-                autoRemove: config.removeAfterStop
+                autoRemove: config.removeAfterStop,
+                terminal: !config.detached
             )
 
             await MainActor.run {
@@ -2255,6 +2274,10 @@ class ContainerService: ObservableObject {
 
                 Task {
                     await loadContainers()
+                }
+
+                if !config.detached {
+                    self.openTerminal(for: id)
                 }
             }
         } catch {

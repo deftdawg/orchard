@@ -140,6 +140,7 @@ struct RunContainerView: View {
             .background(selectedTab == tab ? Color.accentColor.opacity(0.2) : Color.clear)
             .foregroundColor(selectedTab == tab ? .accentColor : .secondary)
             .cornerRadius(6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
@@ -362,6 +363,19 @@ struct RunContainerView: View {
                     .textFieldStyle(.roundedBorder)
 
                 Text("Override the default working directory inside the container")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Executable")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+
+                TextField("/path/to/executable", text: $config.executable)
+                    .textFieldStyle(.roundedBorder)
+
+                Text("Override the default executable")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
